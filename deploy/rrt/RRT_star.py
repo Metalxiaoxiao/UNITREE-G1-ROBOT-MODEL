@@ -111,51 +111,67 @@ class RRTStar3D:
             y_min, y_max = oy - width/2, oy + width/2
             z_min, z_max = oz - height/2, oz + height/2
             
-            # 线段参数方程: p(t) = p1 + t*(p2-p1), t ∈ [0,1]
-            start = np.array([n1.x, n1.y, n1.z])
-            end = np.array([n2.x, n2.y, n2.z])
-            direction = end - start
+            # 计算线段方向向量
+            direction = np.array([n2.x - n1.x, n2.y - n1.y, n2.z - n1.z])
+            length = np.linalg.norm(direction)
             
-            # 计算线段与矩形各面的交点参数t
+            # 如果线段长度接近0，直接检查点是否在障碍物内
+            if length < 1e-6:
+                if (x_min <= n1.x <= x_max and 
+                    y_min <= n1.y <= y_max and 
+                    z_min <= n1.z <= z_max):
+                    return False
+                continue
+            
+            # 归一化方向向量
+            direction = direction / length
+            
+            # 在路径上增加采样点
+            num_samples = max(2, int(length / (self.step_size * 0.5)))
+            for i in range(num_samples + 1):
+                t = i / num_samples
+                point = np.array([
+                    n1.x + t * (n2.x - n1.x),
+                    n1.y + t * (n2.y - n1.y),
+                    n1.z + t * (n2.z - n1.z)
+                ])
+                
+                # 检查点是否在障碍物内
+                if (x_min <= point[0] <= x_max and 
+                    y_min <= point[1] <= y_max and 
+                    z_min <= point[2] <= z_max):
+                    return False
+                
+            # 检查线段与障碍物面的交点
             t_values = []
             
-            # x = x_min 和 x = x_max 平面
-            if direction[0] != 0:
-                t1 = (x_min - start[0]) / direction[0]
-                t2 = (x_max - start[0]) / direction[0]
+            # 处理x面
+            if abs(direction[0]) > 1e-6:
+                t1 = (x_min - n1.x) / direction[0]
+                t2 = (x_max - n1.x) / direction[0]
                 t_values.extend([t1, t2])
             
-            # y = y_min 和 y = y_max 平面
-            if direction[1] != 0:
-                t3 = (y_min - start[1]) / direction[1]
-                t4 = (y_max - start[1]) / direction[1]
+            # 处理y面
+            if abs(direction[1]) > 1e-6:
+                t3 = (y_min - n1.y) / direction[1]
+                t4 = (y_max - n1.y) / direction[1]
                 t_values.extend([t3, t4])
             
-            # z = z_min 和 z = z_max 平面
-            if direction[2] != 0:
-                t5 = (z_min - start[2]) / direction[2]
-                t6 = (z_max - start[2]) / direction[2]
+            # 处理z面
+            if abs(direction[2]) > 1e-6:
+                t5 = (z_min - n1.z) / direction[2]
+                t6 = (z_max - n1.z) / direction[2]
                 t_values.extend([t5, t6])
             
-            # 检查所有有效的交点参数 (0 <= t <= 1)
+            # 检查所有有效的交点
             for t in t_values:
                 if 0 <= t <= 1:
-                    # 计算交点坐标
-                    intersection = start + t * direction
-                    x, y, z = intersection
+                    intersection = n1.x + t * direction[0], n1.y + t * direction[1], n1.z + t * direction[2]
+                    if (x_min <= intersection[0] <= x_max and 
+                        y_min <= intersection[1] <= y_max and 
+                        z_min <= intersection[2] <= z_max):
+                        return False
                     
-                    # 检查交点是否在矩形内
-                    if (x_min <= x <= x_max and 
-                        y_min <= y <= y_max and 
-                        z_min <= z <= z_max):
-                        return False  # 碰撞
-            
-            # 检查线段是否完全在矩形内部
-            if (x_min <= n1.x <= x_max and y_min <= n1.y <= y_max and z_min <= n1.z <= z_max):
-                return False
-            if (x_min <= n2.x <= x_max and y_min <= n2.y <= y_max and z_min <= n2.z <= z_max):
-                return False
-                
         return True  # 无碰撞
 
     def find_near_nodes(self, new_node):
@@ -197,7 +213,7 @@ if __name__ == "__main__":
         (5, 5, 5, 3, 4, 2),
         (2, 8, 3, 2, 2, 3),
         (8, 2, 7, 1, 3, 2),
-        (6.00, 3.65, 6, 12, 2, 12)
+        # (6.00, 3.65, 6, 12, 2, 12)
     ]
     
     # 创建RRT*对象
