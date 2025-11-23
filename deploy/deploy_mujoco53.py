@@ -12,6 +12,10 @@ import math  # 为方向计算添加
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Union
 import os
+import sys
+
+# 将项目根目录添加到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 导入RRT算法
 from deploy.rrt.RRT_star import RRTStar3D, Node3D
@@ -93,7 +97,7 @@ class ArmConfig:
     @classmethod
     def from_yaml(cls, config_path: str) -> 'ArmConfig':
         """从YAML配置文件加载配置"""
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding='utf-8') as f:
             config = yaml.load(f, Loader=yaml.FullLoader)
 
         instance = cls()
@@ -1929,7 +1933,7 @@ def main():
     print(f"  Y轴: {config.workspace_limits['y']}")
     print(f"  Z轴: {config.workspace_limits['z']}")
 
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding='utf-8') as f:
         yaml_config = yaml.load(f, Loader=yaml.FullLoader)
         xml_path = yaml_config["xml_path"].replace("{LEGGED_GYM_ROOT_DIR}", dir_root)
 
