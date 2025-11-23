@@ -1812,6 +1812,10 @@ class InputThread(threading.Thread):
         print("- 输入 'squat' 开始/停止下蹲")
         print("- 输入 'walk' 开始/停止走路模式")
         print("- 输入 'goto x y' 设置行走目标位置, 例如: goto 2.0 3.0")
+        print("- 输入 'walk_10m' 让机器人前进10米")
+        print("- 输入 'start_record' 开始记录轨迹数据")
+        print("- 输入 'stop_record' 停止记录轨迹数据")
+        print("- 输入 'export_data' 导出轨迹数据到CSV文件")
         print("- 输入 'help' 显示帮助信息")
 
         while True:
@@ -1881,6 +1885,42 @@ class InputThread(threading.Thread):
                     # 所有有效命令都放入队列
                     self.input_queue.put(cmd)
 
+                elif cmd == "walk_10m":
+                    # 获取机器人当前位置
+                    try:
+                        pelvis_id = mujoco.mj_name2id(self.squat_controller.model, mujoco.mjtObj.mjOBJ_BODY, 'pelvis')
+                        if pelvis_id != -1:
+                            current_pos = self.squat_controller.data.xpos[pelvis_id]
+                            current_quat = self.squat_controller.data.xquat[pelvis_id]
+                            
+                            # 获取当前朝向
+                            dx, dy = quaternion_to_direction(current_quat[0], current_quat[1], current_quat[2], current_quat[3])
+                            
+                            # 计算10米外的目标位置
+                            target_x = current_pos[0] + dx * 10.0
+                            target_y = current_pos[1] + dy * 10.0
+                            
+                            # 设置目标位置
+                            old_xy = xy.copy()
+                            xy = [target_x, target_y]
+                            switch = True
+                            
+                            print(f"已设置前进10米目标位置: ({target_x:.2f}, {target_y:.2f})")
+                            print(f"当前位置: ({current_pos[0]:.2f}, {current_pos[1]:.2f})")
+                            print(f"理论目标距离: 10.0米")
+                            
+                            # 确保走路模式开启
+                            if not self.squat_controller.is_walking:
+                                self.input_queue.put("walk")  # 触发走路模式
+                                print("走路模式已自动激活")
+                            
+                            # 放入队列
+                            self.input_queue.put(cmd)
+                        else:
+                            print("无法获取机器人位置信息")
+                    except Exception as e:
+                        print(f"设置前进10米目标时出错: {e}")
+                
                 elif cmd == "help":
                     print("有效命令包括:")
                     print("- left_pos x y z (设置左臂位置)")
@@ -1892,6 +1932,10 @@ class InputThread(threading.Thread):
                     print("- squat (开始/停止下蹲)")
                     print("- walk (开始/停止走路模式)")
                     print("- goto x y (设置行走目标位置)")
+                    print("- walk_10m (让机器人前进10米)")
+                    print("- start_record (开始记录轨迹数据)")
+                    print("- stop_record (停止记录轨迹数据)")
+                    print("- export_data (导出轨迹数据到CSV文件)")
                     print("- help (显示帮助)")
 
                 else:
@@ -1977,8 +2021,78 @@ def main():
     print(f"\n左臂末端执行器初始位置: {left_initial_pos.round(4)}")
     print(f"此位置是否在工作空间内: {left_controller.arm_controller._check_position_limits(left_initial_pos)}")
 
+    # 创建轨迹记录器
+    class TrajectoryRecorder:
+        def __init__(self):
+            self.center_of_mass_trajectory = []
+            self.left_hip_joint_trajectory = []
+            self.right_hip_joint_trajectory = []
+            self.left_knee_joint_trajectory = []
+            self.right_knee_joint_trajectory = []
+            self.timestamps = []
+            self.is_recording = False
+            self.start_time = 0
+        
+        def start_recording(self):
+            self.is_recording = True
+            self.start_time = time.time()
+            print("开始记录轨迹数据...")
+        
+        def stop_recording(self):
+            self.is_recording = False
+            print(f"停止记录轨迹数据。共记录 {len(self.timestamps)} 帧。")
+        
+        def record(self, model, data):
+            if not self.is_recording:
+                return
+            
+            # 记录时间戳
+            current_time = time.time() - self.start_time
+            self.timestamps.append(current_time)
+            
+            # 记录质心位置（pelvis节点）
+            pelvis_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, 'pelvis')
+            if pelvis_id != -1:
+                self.center_of_mass_trajectory.append(data.xpos[pelvis_id].copy())
+            
+            # 记录髋关节角度（左髋俯仰和右髋俯仰）
+            self.left_hip_joint_trajectory.append(data.joint("left_hip_pitch_joint").qpos)
+            self.right_hip_joint_trajectory.append(data.joint("right_hip_pitch_joint").qpos)
+            
+            # 记录膝关节角度（左膝和右膝）
+            self.left_knee_joint_trajectory.append(data.joint("left_knee_joint").qpos)
+            self.right_knee_joint_trajectory.append(data.joint("right_knee_joint").qpos)
+        
+        def export_to_csv(self, filepath="robot_trajectory_data.csv"):
+            if not self.timestamps:
+                print("没有轨迹数据可导出。")
+                return
+                
+            # 转换为numpy数组便于操作
+            import pandas as pd
+            
+            # 创建数据字典
+            data = {
+                'timestamp': self.timestamps,
+                'com_x': [p[0] for p in self.center_of_mass_trajectory],
+                'com_y': [p[1] for p in self.center_of_mass_trajectory],
+                'com_z': [p[2] for p in self.center_of_mass_trajectory],
+                'left_hip_angle': self.left_hip_joint_trajectory,
+                'right_hip_angle': self.right_hip_joint_trajectory,
+                'left_knee_angle': self.left_knee_joint_trajectory,
+                'right_knee_angle': self.right_knee_joint_trajectory
+            }
+            
+            # 创建DataFrame并导出到CSV
+            df = pd.DataFrame(data)
+            df.to_csv(filepath, index=False)
+            print(f"轨迹数据已成功导出到: {filepath}")
+    
+    # 创建轨迹记录器实例
+    trajectory_recorder = TrajectoryRecorder()
+    
     # 启动用户输入线程
-    input_thread = InputThread(left_controller, right_controller, squat_controller)
+    input_thread = InputThread(left_controller, right_controller, squat_controller)  
     input_thread.start()
 
     # walk_thread = threading.Thread(target=walker_thread)
@@ -2063,6 +2177,14 @@ def main():
                         else:
                             squat_controller.cmd = np.array([0.0, 0.0, 0.0], dtype=np.float32)
 
+                # 处理轨迹记录控制命令
+                if user_input == "start_record":
+                    trajectory_recorder.start_recording()
+                elif user_input == "stop_record":
+                    trajectory_recorder.stop_recording()
+                elif user_input == "export_data":
+                    trajectory_recorder.export_to_csv()
+                
                 # 显示位置信息
                 if time.time() % 5 < config.simulation_dt:
                     # 显示右臂信息
@@ -2093,6 +2215,9 @@ def main():
                     if squat_controller.is_squatting:
                         print(f"\n下蹲状态: {squat_controller.squat_phase:.2f}")
 
+                # 记录轨迹数据
+                trajectory_recorder.record(model, data)
+                
                 # 更新可视化
                 viewer.sync()
 
