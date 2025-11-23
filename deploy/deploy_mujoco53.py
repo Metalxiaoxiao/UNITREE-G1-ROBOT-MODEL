@@ -1921,6 +1921,15 @@ class InputThread(threading.Thread):
                     except Exception as e:
                         print(f"设置前进10米目标时出错: {e}")
                 
+                elif cmd == "start_record":
+                    print("开始记录轨迹数据命令已接收")
+                    self.input_queue.put(cmd)
+                elif cmd == "stop_record":
+                    print("停止记录轨迹数据命令已接收")
+                    self.input_queue.put(cmd)
+                elif cmd == "export_data":
+                    print("导出轨迹数据命令已接收")
+                    self.input_queue.put(cmd)
                 elif cmd == "help":
                     print("有效命令包括:")
                     print("- left_pos x y z (设置左臂位置)")
@@ -2160,6 +2169,9 @@ def main():
                 data.ctrl[:] = tau
                 # 物理仿真步进
                 mujoco.mj_step(model, data)
+                
+                # 记录轨迹数据
+                trajectory_recorder.record(model, data)
 
                 # 获取用户输入，处理命令
                 user_input = input_thread.get_input()
